@@ -1,0 +1,49 @@
+---
+- name: Set UFW default deny incoming
+  ufw:
+    direction: incoming
+    policy: deny
+
+- name: Set UFW default allow outgoing
+  ufw:
+    direction: outgoing
+    policy: allow
+
+- name: Allow SSH (port 22)
+  ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+
+- name: Allow HTTP (port 80)
+  ufw:
+    rule: allow
+    port: "80"
+    proto: tcp
+
+- name: Allow HTTPS (port 443)
+  ufw:
+    rule: allow
+    port: "443"
+    proto: tcp
+
+# Docker publishes ports via FORWARD chain (DNAT), not INPUT.
+# UFW blocks routed/forwarded traffic by default.
+# These route rules allow forwarded traffic on 80/443.
+- name: Allow routed traffic to HTTP (Docker)
+  ufw:
+    rule: allow
+    route: yes
+    port: "80"
+    proto: tcp
+
+- name: Allow routed traffic to HTTPS (Docker)
+  ufw:
+    rule: allow
+    route: yes
+    port: "443"
+    proto: tcp
+
+- name: Enable UFW
+  ufw:
+    state: enabled

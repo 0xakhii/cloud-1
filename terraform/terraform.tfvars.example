@@ -1,0 +1,10 @@
+# =============================================================================
+# Cloud-1 — Terraform Variables
+# Copy to terraform.tfvars and fill in your values:
+#   cp terraform.tfvars.example terraform.tfvars
+# =============================================================================
+
+aws_region           = "eu-west-3"
+instance_type        = "t3.micro"
+key_name             = "cloud-1"                    # Your AWS key pair name
+ssh_private_key_path = "~/Downloads/cloud-1.pem"    # Path to your .pem file

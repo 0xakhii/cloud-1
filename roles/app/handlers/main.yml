@@ -1,0 +1,6 @@
+---
+- name: Restart docker compose
+  shell: |
+    cd {{ app_dir }}
+    docker compose down
+    docker compose up -d

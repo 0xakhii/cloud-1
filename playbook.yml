@@ -1,0 +1,11 @@
+---
+- name: Deploy Cloud-1 Infrastructure
+  hosts: web
+  become: yes
+
+  roles:
+    - common
+    - docker
+    - firewall
+    - ssl
+    - app

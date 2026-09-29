@@ -1,0 +1,81 @@
+---
+- name: Create SSL directory
+  file:
+    path: "{{ app_dir }}/ssl"
+    state: directory
+    mode: '0700'
+
+- name: Install certbot
+  apt:
+    name: certbot
+    state: present
+    update_cache: yes
+  when: server_name is not match('^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$') and server_name != 'localhost'
+
+- name: Check if Let's Encrypt certificate already exists
+  stat:
+    path: "/etc/letsencrypt/live/{{ server_name }}/fullchain.pem"
+  register: letsencrypt_cert
+  when: server_name is not match('^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$') and server_name != 'localhost'
+
+- name: Stop running services to free port 80 for standalone certbot
+  shell: "docker compose -f {{ app_dir }}/docker-compose.yml down || true"
+  when:
+    - server_name is not match('^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$')
+    - server_name != 'localhost'
+    - not letsencrypt_cert.stat.exists
+
+- name: Obtain Let's Encrypt SSL certificate
+  command: >
+    certbot certonly --standalone
+    --non-interactive
+    --agree-tos
+    --email {{ certbot_email }}
+    -d {{ server_name }}
+  when:
+    - server_name is not match('^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$')
+    - server_name != 'localhost'
+    - not letsencrypt_cert.stat.exists
+  register: certbot_run
+  ignore_errors: true
+
+- name: Re-check Let's Encrypt certificate after issuance attempt
+  stat:
+    path: "/etc/letsencrypt/live/{{ server_name }}/fullchain.pem"
+  register: letsencrypt_cert_after
+  when: server_name is not match('^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$') and server_name != 'localhost'
+
+- name: Copy Let's Encrypt certificate to app ssl directory
+  copy:
+    src: "/etc/letsencrypt/live/{{ server_name }}/fullchain.pem"
+    dest: "{{ app_dir }}/ssl/server.crt"
+    remote_src: yes
+    mode: '0644'
+  when:
+    - letsencrypt_cert_after.stat is defined
+    - letsencrypt_cert_after.stat.exists
+
+- name: Copy Let's Encrypt private key to app ssl directory
+  copy:
+    src: "/etc/letsencrypt/live/{{ server_name }}/privkey.pem"
+    dest: "{{ app_dir }}/ssl/server.key"
+    remote_src: yes
+    mode: '0600'
+  when:
+    - letsencrypt_cert_after.stat is defined
+    - letsencrypt_cert_after.stat.exists
+
+# Fallback to self-signed cert if Let's Encrypt is skipped or failed
+- name: Check if SSL certificate exists in app ssl directory
+  stat:
+    path: "{{ app_dir }}/ssl/server.crt"
+  register: local_ssl_cert
+
+- name: Generate fallback self-signed SSL certificate
+  command: >
+    openssl req -x509 -nodes -days 365
+    -newkey rsa:2048
+    -keyout {{ app_dir }}/ssl/server.key
+    -out {{ app_dir }}/ssl/server.crt
+    -subj "/C=FR/ST=IDF/L=Paris/O=42/CN={{ server_name }}"
+  when: not local_ssl_cert.stat.exists

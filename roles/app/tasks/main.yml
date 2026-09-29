@@ -1,0 +1,133 @@
+---
+# =============================================================================
+# App role — deploy docker-compose stack + auto-install WordPress
+# =============================================================================
+
+- name: Create application directory
+  file:
+    path: "{{ app_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Create nginx config directory
+  file:
+    path: "{{ app_dir }}/nginx"
+    state: directory
+    mode: '0755'
+
+- name: Deploy environment file
+  template:
+    src: env.j2
+    dest: "{{ app_dir }}/.env"
+    mode: '0600'
+  no_log: true
+  notify: Restart docker compose
+
+- name: Deploy docker-compose.yml
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ app_dir }}/docker-compose.yml"
+    mode: '0644'
+  notify: Restart docker compose
+
+- name: Deploy nginx configuration
+  template:
+    src: nginx.conf.j2
+    dest: "{{ app_dir }}/nginx/default.conf"
+    mode: '0644'
+  notify: Restart docker compose
+
+- name: Pull Docker images
+  command: docker compose pull
+  args:
+    chdir: "{{ app_dir }}"
+  changed_when: true
+
+- name: Start docker compose stack
+  command: docker compose up -d
+  args:
+    chdir: "{{ app_dir }}"
+  changed_when: true
+
+# ---------------------------------------------------------------------------
+# Wait for services
+# ---------------------------------------------------------------------------
+
+- name: Wait for MariaDB to accept connections
+  command: >
+    docker exec mariadb mariadb
+    -u{{ mysql_user }} -p{{ mysql_password }}
+    -e "SELECT 1"
+  register: db_ready
+  until: db_ready.rc == 0
+  retries: 30
+  delay: 5
+  changed_when: false
+  no_log: true
+
+- name: Wait for WordPress config to be generated
+  command: docker exec wordpress test -f /var/www/html/wp-config.php
+  register: wp_config
+  until: wp_config.rc == 0
+  retries: 30
+  delay: 5
+  changed_when: false
+
+# ---------------------------------------------------------------------------
+# WordPress auto-install via WP-CLI
+# ---------------------------------------------------------------------------
+
+- name: Check if WP-CLI is installed
+  command: docker exec wordpress wp --version --allow-root
+  register: wpcli_check
+  ignore_errors: true
+  changed_when: false
+
+- name: Install WP-CLI
+  command: >
+    docker exec wordpress sh -c "curl -fsSL -o /usr/local/bin/wp https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && chmod +x /usr/local/bin/wp"
+  when: wpcli_check.rc != 0
+
+- name: Check if WordPress is already installed
+  command: docker exec wordpress wp core is-installed --allow-root
+  register: wp_installed
+  ignore_errors: true
+  changed_when: false
+
+- name: Run WordPress installation
+  command: >
+    docker exec wordpress wp core install
+    --url="https://{{ server_name }}"
+    --title="{{ wp_title }}"
+    --admin_user="{{ wp_admin_user }}"
+    --admin_password="{{ wp_admin_password }}"
+    --admin_email="{{ wp_admin_email }}"
+    --skip-email
+    --allow-root
+  when: wp_installed.rc != 0
+  no_log: true
+
+- name: Ensure WordPress siteurl and home option match current server_name
+  command: >
+    docker exec wordpress wp option update {{ item }} "https://{{ server_name }}" --allow-root
+  loop:
+    - siteurl
+    - home
+  when: wp_installed.rc == 0
+  changed_when: false
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+
+- name: Deployment summary
+  debug:
+    msg: |
+      ==========================================
+       Cloud-1 Deployed Successfully!
+      ==========================================
+       WordPress:  https://{{ server_name }}/
+       phpMyAdmin: https://{{ server_name }}/phpmyadmin/
+       WP Admin:   https://{{ server_name }}/wp-admin/
+       Admin User: {{ wp_admin_user }}
+      ==========================================

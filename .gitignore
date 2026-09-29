@@ -1,0 +1,23 @@
+# Secrets
+.env
+*.key
+*.crt
+vault_pass.txt
+.vault_pass
+inventories/cloud.ini
+
+# Vagrant
+.vagrant/
+
+# Ansible
+*.retry
+
+# OS
+.DS_Store
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/*.tfvars
+terraform/.terraform.lock.hcl
